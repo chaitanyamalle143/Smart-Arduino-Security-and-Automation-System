@@ -1,0 +1,110 @@
+#include <Wire.h>
+#include <Servo.h>
+
+// --- Actuators ---
+#define buzzerPin 3
+#define bulb1 4
+#define bulb2 5
+#define heater 6
+#define motor1 9
+#define motor2 10
+#define enableA 11
+#define enableB 12
+
+Servo doorServo;
+
+String command = "";
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(bulb1, OUTPUT);
+  pinMode(bulb2, OUTPUT);
+  pinMode(heater, OUTPUT);
+
+  pinMode(motor1, OUTPUT);
+  pinMode(motor2, OUTPUT);
+  pinMode(enableA, OUTPUT);
+  pinMode(enableB, OUTPUT);
+
+  doorServo.attach(7);
+
+  Wire.begin(8); // Slave address = 8
+  Wire.onReceive(receiveEvent);
+
+  Serial.println("Slave Ready");
+}
+
+void loop() {
+  // Nothing in loop – everything handled when Master sends data
+}
+
+// --- Handle Commands from Master ---
+void receiveEvent(int howMany) {
+  command = "";
+  while (Wire.available()) {
+    char c = Wire.read();
+    command += c;
+  }
+  Serial.print("Command Received: ");
+  Serial.println(command);
+
+  // --- Fan Control ---
+  if (command == "FAN_ON") {
+    analogWrite(enableA, 200); // medium speed
+    analogWrite(enableB, 200);
+    digitalWrite(motor1, HIGH);
+    digitalWrite(motor2, LOW);
+    Serial.println("Fan ON -> Motors running");
+  }
+  else if (command == "FAN_OFF") {
+    analogWrite(enableA, 0);
+    analogWrite(enableB, 0);
+    Serial.println("Fan OFF -> Motors stopped");
+  }
+
+  // --- Heater Control ---
+  else if (command == "H_ON") {
+    digitalWrite(heater, HIGH);
+    Serial.println("Heater ON");
+  }
+  else if (command == "H_OFF") {
+    digitalWrite(heater, LOW);
+    Serial.println("Heater OFF");
+  }
+
+  // --- Bulb Control ---
+  else if (command == "B1_ON") {
+    digitalWrite(bulb1, HIGH);
+    Serial.println("Bulb1 ON");
+  }
+  else if (command == "B1_OFF") {
+    digitalWrite(bulb1, LOW);
+    Serial.println("Bulb1 OFF");
+  }
+  else if (command == "B2_ON") {
+    digitalWrite(bulb2, HIGH);
+    Serial.println("Bulb2 ON");
+  }
+  else if (command == "B2_OFF") {
+    digitalWrite(bulb2, LOW);
+    Serial.println("Bulb2 OFF");
+  }
+
+  // --- Alarm (Buzzer) ---
+  else if (command == "ALARM") {
+    digitalWrite(buzzerPin, HIGH);
+    delay(1000);
+    digitalWrite(buzzerPin, LOW);
+    Serial.println("ALARM Triggered -> Buzzer Beep");
+  }
+
+  // --- Door Servo ---
+  else if (command == "DOOR_OPEN") {
+    doorServo.write(90);
+    delay(2000);
+    doorServo.write(0);
+    Serial.println("Door Opened (Servo moved)");
+  }
+}
