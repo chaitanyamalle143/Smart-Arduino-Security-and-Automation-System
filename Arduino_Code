@@ -1,0 +1,153 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Keypad.h>
+#include <Servo.h>
+
+// --- Pin Definitions ---
+#define trigPin 7      // TRIG pin
+#define echoPin 8      // ECHO pin
+#define ldrPin A0      // LDR input
+#define tempPin A1     // TMP36 middle pin
+#define pirPin 2       // PIR simulated with button
+#define servoPin 9     // Servo motor pin
+
+// --- LCD Setup ---
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// --- Keypad Setup ---
+const byte ROWS = 4;
+const byte COLS = 4;
+char keys[ROWS][COLS] = {
+  {'1','2','3','A'},
+  {'4','5','6','B'},
+  {'7','8','9','C'},
+  {'*','0','#','D'}
+};
+byte rowPins[ROWS] = {3, 4, 5, 6}; // Rows connected to D3–D6
+byte colPins[COLS] = {A2, A3, A4, 12}; // Cols connected
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
+
+// --- Servo ---
+Servo doorServo;
+
+// --- Password ---
+String password = "1234#";
+String inputPassword = "";
+
+// --- Setup ---
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();  // Master I2C
+  lcd.init();
+  lcd.backlight();
+  doorServo.attach(servoPin);
+
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(pirPin, INPUT);
+  pinMode(ldrPin, INPUT);
+  pinMode(tempPin, INPUT);
+
+  lcd.setCursor(0,0);
+  lcd.print("System Ready");
+  delay(2000);
+  lcd.clear();
+}
+
+// --- Distance Function ---
+long getDistance() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  long duration = pulseIn(echoPin, HIGH);
+  long distance = duration * 0.034 / 2;
+  return distance;
+}
+
+// --- Send Command ---
+void sendCommand(String cmd) {
+  Wire.beginTransmission(8);   // Slave address = 8
+  Wire.write(cmd.c_str());
+  Wire.endTransmission();
+  Serial.println("Sent: " + cmd);
+}
+
+// --- Loop ---
+void loop() {
+  // --- Distance ---
+  long distance = getDistance();
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  // --- LDR ---
+  int ldrVal = analogRead(ldrPin);
+  Serial.print("LDR Value: ");
+  Serial.println(ldrVal);
+
+  if (ldrVal < 100) {
+    sendCommand("B1_ON");
+    sendCommand("B2_ON");
+  } else {
+    sendCommand("B1_OFF");
+    sendCommand("B2_OFF");
+  }
+
+  // --- Temperature (TMP36) ---
+  int tempVal = analogRead(tempPin);
+  float voltage = tempVal * (5.0 / 1023.0); // convert ADC to voltage
+  float tempC = voltage * 100;              // TMP36 approx conversion
+  Serial.print("Temp: ");
+  Serial.print(tempC);
+  Serial.println(" C");
+
+  if (tempC > 27) {
+    sendCommand("FAN_ON");
+  } else {
+    sendCommand("FAN_OFF");
+  }
+
+  if (tempC < 17) {
+    sendCommand("H_ON");
+  } else {
+    sendCommand("H_OFF");
+  }
+
+  // --- PIR ---
+  if (digitalRead(pirPin) == HIGH) {
+    Serial.println("PIR: Motion Detected");
+    sendCommand("ALARM");
+  } else {
+    Serial.println("PIR: No Motion");
+  }
+
+  // --- Keypad ---
+  char key = keypad.getKey();
+  if (key) {
+    Serial.print("Key Pressed: ");
+    Serial.println(key);
+    inputPassword += key;
+
+    if (key == '#') {
+      if (inputPassword == password) {
+        Serial.println("Password Correct -> Door Open");
+        lcd.clear();
+        lcd.print("Door Open");
+        sendCommand("DOOR_OPEN");   // send to slave
+        doorServo.write(90);
+        delay(2000);
+        doorServo.write(0);
+      } else {
+        Serial.println("Wrong Password -> Alarm");
+        lcd.clear();
+        lcd.print("Wrong Password");
+        sendCommand("ALARM");       // send to slave
+      }
+      inputPassword = "";
+    }
+  }
+
+  delay(500);
+}
